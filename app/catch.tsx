@@ -4,11 +4,13 @@ import {
   StatusBar, Platform, PanResponder, Dimensions, LayoutChangeEvent, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { EMBEDDED, GAMES_MENU, SORT_ROUTE, CATCH_ROUTE, useBottomInset } from '../components/layout';
 import { useRouter } from 'expo-router';
 import { ITEM_IMAGES } from '../assets/itemImages';
 import { C } from '../assets/theme';
-import { UI, SCENE } from '../assets/uiImages';
-import { Wood, Meadow, ModeTabs, WOOD, WOOD_EDGE } from '../components/Wood';
+import { UI } from '../assets/uiImages';
+import { Wood, Meadow, WOOD, WOOD_EDGE } from '../components/Wood';
+import { PauseButton, PauseMenu } from '../components/PauseMenu';
 
 /* ------------------------------------------------------------------
    CATCH MODE
@@ -173,6 +175,8 @@ red | chip-packet | Chip packet | Silver on the inside means it is not recyclabl
 `;
 
 const MAX_LIVES = 3;
+const NEXT_DELAY_RIGHT = 500;   // ms before the next item after a catch
+const NEXT_DELAY_OTHER = 1100;  // ms after a wrong bin or a miss, so the hint can be read
 const START_SPEED = 1.1;
 const SPEED_STEP = 0.06;
 const MAX_SPEED = 3.2;
@@ -267,6 +271,7 @@ function Burst({ left, top, text }: { left: number; top: number; text: string })
 
 export default function CatchScreen() {
   const router = useRouter();
+  const bottomInset = useBottomInset();
 
   const [item, setItem] = useState<Item>(() => POOL[Math.floor(Math.random() * POOL.length)]);
   const [caught, setCaught] = useState(0);
@@ -411,7 +416,8 @@ export default function CatchScreen() {
         else setHint(msg);
       }
     }
-    if (!ended) setTimeout(() => { if (!deadRef.current) spawn(); }, 1100);
+    const wait = bin && bin === d.bin ? NEXT_DELAY_RIGHT : NEXT_DELAY_OTHER;
+    if (!ended) setTimeout(() => { if (!deadRef.current) spawn(); }, wait);
   }, [chompBin, dropIn, fade, loseLife, nearestBin, openLid, showFlash, spawn]);
 
   useEffect(() => {
@@ -474,7 +480,7 @@ export default function CatchScreen() {
     : { pic: 'new', name: 'Sorter in training', line: 'Take your time with the first few.' };
 
   return (
-    <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
+    <SafeAreaView style={s.screen} edges={EMBEDDED ? [] : ['top']}>
       <StatusBar barStyle="light-content" backgroundColor={WOOD} />
 
       <Wood style={s.banner}>
@@ -499,6 +505,8 @@ export default function CatchScreen() {
               <View style={[s.levelFill, { width: `${((caught % WOOD_LEVELS) / WOOD_LEVELS) * 100}%` as `${number}%` }]} />
             </View>
           </View>
+
+          <PauseButton onPress={() => { if (!over) setPaused(true); }} />
         </View>
       </Wood>
 
@@ -506,7 +514,6 @@ export default function CatchScreen() {
       <View style={s.fieldWrap}>
         <View style={s.field} onLayout={onFieldLayout}>
           <Meadow width={FIELD_W} height={fieldH} />
-          <View style={s.signpost} pointerEvents="none"><Image source={SCENE.signpost} style={s.signpostImg} /></View>
 
           <Animated.View
             style={[
@@ -562,12 +569,6 @@ export default function CatchScreen() {
             </View>
           )}
 
-          {paused && !over && (
-            <View style={s.pauseVeil} pointerEvents="none">
-              <Text style={s.pauseText}>Paused</Text>
-            </View>
-          )}
-
           {over && (
             <View style={s.over}>
               <View style={s.badge}><Image source={UI.rank[rank.pic as 'head' | 'top' | 'good' | 'new']} style={s.badgeImg} /></View>
@@ -578,33 +579,20 @@ export default function CatchScreen() {
               <Pressable style={s.cta} onPress={replay}>
                 <Text style={s.ctaText}>Play again</Text>
               </Pressable>
+              <Pressable style={s.backLink} onPress={() => router.replace(GAMES_MENU)}>
+                <Text style={s.backLinkText}>Back to games</Text>
+              </Pressable>
             </View>
           )}
         </View>
       </View>
 
-      <View style={s.talk}>
+      <View style={[s.talk, { marginBottom: 12 + bottomInset }]}>
         <Text style={s.why}>{hint}</Text>
       </View>
       </View>
 
-      <Wood style={s.footer}>
-          <ModeTabs
-            active="catch"
-            onSort={() => router.replace('/')}
-            onCatch={() => {}}
-            left={
-              <Pressable
-                hitSlop={8}
-                onPress={() => setPaused((p) => !p)}
-                style={s.roundBtn}
-                accessibilityLabel={paused ? 'Resume' : 'Pause'}
-              >
-                <Image source={paused ? UI.play : UI.pause} style={s.pauseImg} />
-              </Pressable>
-            }
-          />
-      </Wood>
+      {paused && !over && <PauseMenu onResume={() => setPaused(false)} onExit={() => router.replace(GAMES_MENU)} />}
     </SafeAreaView>
   );
 }
@@ -640,8 +628,6 @@ const s = StyleSheet.create({
   // field now fills whatever space is left instead of a fixed height
   fieldWrap: { flex: 1, paddingHorizontal: PAD, paddingTop: 12 },
   field: { flex: 1, width: FIELD_W, backgroundColor: '#CBEBF0', borderRadius: 22, overflow: 'hidden' },
-  signpost: { position: 'absolute', left: 6, bottom: BIN_H + GROUND_H - 6, width: 64, height: 64 },
-  signpostImg: { width: 64, height: 64 },
 
   faller: { position: 'absolute', top: 0, left: 0, width: FALLER_W, alignItems: 'center' },
   tile: { width: 80, height: 80, borderRadius: 22, backgroundColor: C.light, alignItems: 'center', justifyContent: 'center' },
@@ -666,6 +652,8 @@ const s = StyleSheet.create({
   overRank: { fontSize: 21, fontWeight: '800', color: C.dark, marginBottom: 6, fontFamily: FONT },
   overLine: { fontSize: 14, fontWeight: '500', color: C.grey, textAlign: 'center', lineHeight: 20, marginBottom: 16, fontFamily: FONT },
 
+  backLink: { marginTop: 12, paddingVertical: 8, paddingHorizontal: 18 },
+  backLinkText: { color: C.dark, fontSize: 15, fontWeight: '700', fontFamily: FONT, textDecorationLine: 'underline' },
   cta: { backgroundColor: C.orange, borderRadius: 16, paddingVertical: 13, paddingHorizontal: 26 },
   ctaText: { color: C.ink, fontSize: 15, fontWeight: '700', fontFamily: FONT },
 
